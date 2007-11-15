@@ -1,0 +1,86 @@
+IPTables-libiptc version 0.04
+=============================
+
+This package provides a Perl interface to the netfilter/iptables
+C-library libiptc.
+
+Advantages of this module: Many rule changes can be done very
+fast. Several rule changes is committed atomically.
+
+This module is heavily inspired by the CPAN module IPTables-IPv4.  The
+CPAN module IPTables-IPv4 could not be used because it has not been
+keept up-to-date, with the newest iptables extentions.  This is a
+result of the module design, as it contains every extention and thus
+needs to port them individually.
+
+This package has another approach, it links with the systems libiptc.a
+library and depend on dynamic loading of iptables extensions available
+on the system.
+
+This design limits us to only export the libiptc chain manipulation
+functions.  All rule manipulations are done through the iptables.c
+"do_command" function. (As iptables.c is not made as a library, the
+package unfortunally needs to maintain/contain this C file).
+
+
+DEPENDENCIES
+
+This module requires these other modules and libraries:
+
+ iptables
+ libiptc.a
+
+The iptables version installed on your system needs to match the
+IPTABLES_VERSION variable this module is compiled with.
+
+ Currently depends on iptables/libiptc version 1.3.4, because this
+ version contained a chain reference bug.  For this reason, it has
+ been necessary to include it in the module and compile libiptc.a our
+ self, with this bug fixed. This has been fixed in 1.3.6 by me, but
+ this module has not been updated yet.
+
+Thus, to get started using this module quickly, download and install
+iptables version 1.3.4 on your system.
+
+REMEMBER also to do a: 'make install-devel'
+
+Debian hint: "apt-get install iptables-dev" to get libiptc.h.
+
+To use a newer version (that 1.3.4) with this module:
+
+ 1. From iptables tarball, copy libiptc/libip*.c to library_iptc/
+
+ 2. Copy iptables.c to iptables/
+
+ 3. Change the variable IPTABLES_VERSION in Makefile.PL
+
+
+INSTALLATION
+
+Notice this module depends on iptables dynamic loadable libraries,
+thus it needs to know the path to them (default assumes they are
+located in /lib/iptables).  The iptables path for dynamic loading
+(where the libipt_*.so files are located) can be altered by setting
+the variable IPTABLES_LIB_DIR while calling make.  This can also be
+changed later at runtime setting the environment variable
+IPTABLES_LIB_DIR.
+
+To install this module type the following:
+
+   perl Makefile.PL PREFIX=/usr/local/
+   make IPTABLES_LIB_DIR=/usr/local/lib/iptables
+   sudo make test
+   make install PREFIX=/usr/local/stow/IPTables-libiptc-0.04
+
+   cd /usr/local/stow/
+   stow IPTables-libiptc-0.04
+
+
+COPYRIGHT AND LICENCE
+
+Copyright (C) 2006 by Jesper Dangaard Brouer <hawk@people.netfilter.org>
+
+This library is free software; you can redistribute it and/or modify
+it under the same terms as Perl itself, either Perl version 5.8.4 or,
+at your option, any later version of Perl 5 you may have available.
+
