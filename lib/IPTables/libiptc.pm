@@ -42,7 +42,7 @@ our @EXPORT = qw(
 	IPT_MIN_ALIGN
 );
 
-our $VERSION = '0.05';
+our $VERSION = '0.06';
 
 sub AUTOLOAD {
     # This AUTOLOAD is used to 'autoload' constants from the constant()
@@ -274,8 +274,8 @@ Jesper Dangaard Brouer, E<lt>hawk@diku.dkE<gt> or E<lt>hawk@people.netfilter.org
 
 =head2 Authors SVN version information
 
- $LastChangedDate: 2007-11-20 12:52:27 +0100 (Tue, 20 Nov 2007) $
- $Revision: 507 $
+ $LastChangedDate: 2008-06-13 17:31:29 +0200 (Fri, 13 Jun 2008) $
+ $Revision: 565 $
  $LastChangedBy: jdb $
 
 

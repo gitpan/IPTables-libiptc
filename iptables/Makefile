@@ -39,7 +39,7 @@ CFLAGS:=$(COPT_FLAGS) -Wall -Wunused -I$(KERNEL_DIR)/include -I$(INCDIR) -I../in
 DEFINES:=-DIPTABLES_VERSION=\"$(IPTABLES_VERSION)\" -DIPT_LIB_DIR=\"$(IPT_LIBDIR)\"
 default: all
 
-all: iptables.o iptables-standalone
+all: iptables.o iptables-standalone iptables-blocking
 
 iptables.o: iptables.c Makefile
 	$(CC) $(CFLAGS) -c -o $@ $<
@@ -47,5 +47,8 @@ iptables.o: iptables.c Makefile
 iptables-standalone: iptables-standalone.c iptables.o
 	$(CC) $(CFLAGS) $(DEFINES) $(LDFLAGS) $(LD_LOCAL_IPTC) -o $@ $^ $(LDLIBS)
 
+iptables-blocking: iptables-blocking.c iptables.o
+	$(CC) $(CFLAGS) $(DEFINES) $(LDFLAGS) $(LD_LOCAL_IPTC) -o $@ $^ $(LDLIBS)
+
 clean:
-	rm iptables-standalone *.o
+	rm iptables-standalone iptables-blocking *.o
