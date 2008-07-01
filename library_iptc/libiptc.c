@@ -23,6 +23,11 @@
  * 	- libiptc now has a real internal (linked-list) represntation of the
  * 	  ruleset and a parser/compiler from/to this internal representation
  * 	- again sponsored by Astaro AG (http://www.astaro.com/)
+ *
+ * 2008-Jun: Jesper Dangaard Brouer <hawk@diku.dk>
+ * 	- Performance optimization, sponsored by ComX Networks A/S.
+ * 	  Use binary search to speedup ruleset parsing and chain name search.
+ * 	  Thus, making the number of chains scale to above 50000 chains.
  */
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -53,7 +58,6 @@
 static int sockfd = -1;
 static int sockfd_use = 0;
 static void *iptc_fn = NULL;
-static int not_sorted_chain_offsets = 0;
 
 static const char *hooknames[] = {
 	[HOOK_PRE_ROUTING]	= "PREROUTING",
@@ -143,6 +147,11 @@ STRUCT_TC_HANDLE
 
 	struct chain_head **chain_index;   /* array for fast chain list access*/
 	unsigned int        chain_index_sz;/* size of chain index array */
+
+	int sorted_offsets; /* if chains are received sorted from kernel,
+			     * then the offsets are also sorted. Says if its
+			     * possible to bsearch offsets using chain_index.
+			     */
 
 	STRUCT_GETINFO info;
 	STRUCT_GET_ENTRIES *entries;
@@ -381,7 +390,7 @@ __iptcc_bsearch_chain_index(const char *name, unsigned int offset,
 
 
 	list_pos = &handle->chain_index[pos]->list;
-	(*idx)=pos;
+	*idx = pos;
 
 	if (res == 0) { /* Found element, by direct hit */
 		debug("[found] Direct hit pos:%d end:%d\n", pos, end);
@@ -447,7 +456,7 @@ iptcc_bsearch_chain_offset(unsigned int offset, unsigned int *idx,
 	/* If chains were not received sorted from kernel, then the
 	 * offset bsearch is not possible.
 	 */
-	if (not_sorted_chain_offsets)
+	if (!handle->sorted_offsets)
 		pos = handle->chains.next;
 	else
 		pos = __iptcc_bsearch_chain_index(NULL, offset, idx, handle,
@@ -604,9 +613,9 @@ static int iptcc_chain_index_delete_chain(struct chain_head *c, TC_HANDLE_T h)
 {
 	struct list_head *index_ptr, *index_ptr2, *next;
 	struct chain_head *c2;
-	unsigned int index, index2;
+	unsigned int idx, idx2;
 
-	index_ptr = iptcc_bsearch_chain_index(c->name, &index, h);
+	index_ptr = iptcc_bsearch_chain_index(c->name, &idx, h);
 
 	debug("Del chain[%s] c->list:%p index_ptr:%p\n",
 	      c->name, &c->list, index_ptr);
@@ -622,15 +631,15 @@ static int iptcc_chain_index_delete_chain(struct chain_head *c, TC_HANDLE_T h)
 		 * is located in the same index bucket.
 		 */
 		c2         = list_entry(next, struct chain_head, list);
-		index_ptr2 = iptcc_bsearch_chain_index(c2->name, &index2, h);
-		if (index != index2) {
+		index_ptr2 = iptcc_bsearch_chain_index(c2->name, &idx2, h);
+		if (idx != idx2) {
 			/* Rebuild needed */
 			return iptcc_chain_index_rebuild(h);
 		} else {
 			/* Avoiding rebuild */
 			debug("Update cindex[%d] with next ptr name:[%s]\n",
-			      index, c2->name);
-			h->chain_index[index]=c2;
+			      idx, c2->name);
+			h->chain_index[idx]=c2;
 			return 0;
 		}
 	}
@@ -915,7 +924,7 @@ static void __iptcc_p_add_chain(TC_HANDLE_T h, struct chain_head *c,
 			 * from kernel, then the offset bsearch is no
 			 * longer valid.
 			 */
-			not_sorted_chain_offsets = 1;
+			h->sorted_offsets = 0;
 
 			debug("WARNING: chain:[%s] was NOT sorted(ctail:%s)\n",
 			      c->name, ctail->name);
@@ -1043,6 +1052,10 @@ static int parse_table(TC_HANDLE_T h)
 	unsigned int num = 0;
 	struct chain_head *c;
 
+	/* Assume that chains offsets are sorted, this verified during
+	   parsing of ruleset (in __iptcc_p_add_chain())*/
+	h->sorted_offsets = 1;
+
 	/* First pass: over ruleset blob */
 	ENTRY_ITERATE(h->entries->entrytable, h->entries->size,
 			cache_add_entry, h, &prev, &num);
@@ -1056,18 +1069,18 @@ static int parse_table(TC_HANDLE_T h)
 	list_for_each_entry(c, &h->chains, list) {
 		struct rule_head *r;
 		list_for_each_entry(r, &c->rules, list) {
-			struct chain_head *c;
+			struct chain_head *lc;
 			STRUCT_STANDARD_TARGET *t;
 
 			if (r->type != IPTCC_R_JUMP)
 				continue;
 
 			t = (STRUCT_STANDARD_TARGET *)GET_TARGET(r->entry);
-			c = iptcc_find_chain_by_offset(h, t->verdict);
-			if (!c)
+			lc = iptcc_find_chain_by_offset(h, t->verdict);
+			if (!lc)
 				return -1;
-			r->jump = c;
-			c->references++;
+			r->jump = lc;
+			lc->references++;
 		}
 	}
 
@@ -1320,7 +1333,7 @@ TC_INIT(const char *tablename)
 			return NULL;
 	}
 	sockfd_use++;
-
+retry:
 	s = sizeof(info);
 
 	strcpy(info.name, tablename);
@@ -1373,6 +1386,9 @@ TC_INIT(const char *tablename)
 	return h;
 error:
 	TC_FREE(&h);
+	/* A different process changed the ruleset size, retry */
+	if (errno == EAGAIN)
+		goto retry;
 	return NULL;
 }
 
@@ -1565,7 +1581,7 @@ TC_NEXT_RULE(const STRUCT_ENTRY *prev, TC_HANDLE_T *handle)
 }
 
 /* How many rules in this chain? */
-unsigned int
+static unsigned int
 TC_NUM_RULES(const char *chain, TC_HANDLE_T *handle)
 {
 	struct chain_head *c;
@@ -1581,9 +1597,8 @@ TC_NUM_RULES(const char *chain, TC_HANDLE_T *handle)
 	return c->num_rules;
 }
 
-const STRUCT_ENTRY *TC_GET_RULE(const char *chain,
-				unsigned int n,
-				TC_HANDLE_T *handle)
+static const STRUCT_ENTRY *
+TC_GET_RULE(const char *chain, unsigned int n, TC_HANDLE_T *handle)
 {
 	struct chain_head *c;
 	struct rule_head *r;
@@ -1605,7 +1620,7 @@ const STRUCT_ENTRY *TC_GET_RULE(const char *chain,
 }
 
 /* Returns a pointer to the target name of this position. */
-const char *standard_target_map(int verdict)
+static const char *standard_target_map(int verdict)
 {
 	switch (verdict) {
 		case RETURN:
@@ -2265,6 +2280,8 @@ int
 TC_CREATE_CHAIN(const IPT_CHAINLABEL chain, TC_HANDLE_T *handle)
 {
 	static struct chain_head *c;
+	int capacity;
+	int exceeded;
 
 	iptc_fn = TC_CREATE_CHAIN;
 
@@ -2304,8 +2321,8 @@ TC_CREATE_CHAIN(const IPT_CHAINLABEL chain, TC_HANDLE_T *handle)
 	 * in the buckets. Thus, only rebuild chain index when the
 	 * capacity is exceed with CHAIN_INDEX_INSERT_MAX chains.
 	 */
-	int capacity = (*handle)->chain_index_sz * CHAIN_INDEX_BUCKET_LEN;
-	int exceeded = ((((*handle)->num_chains)-capacity));
+	capacity = (*handle)->chain_index_sz * CHAIN_INDEX_BUCKET_LEN;
+	exceeded = ((((*handle)->num_chains)-capacity));
 	if (exceeded > CHAIN_INDEX_INSERT_MAX) {
 		debug("Capacity(%d) exceeded(%d) rebuild (chains:%d)\n",
 		      capacity, exceeded, (*handle)->num_chains);
@@ -2489,16 +2506,14 @@ subtract_counters(STRUCT_COUNTERS *answer,
 }
 
 
-static void counters_nomap(STRUCT_COUNTERS_INFO *newcounters,
-			   unsigned int index)
+static void counters_nomap(STRUCT_COUNTERS_INFO *newcounters, unsigned int idx)
 {
-	newcounters->counters[index] = ((STRUCT_COUNTERS) { 0, 0});
+	newcounters->counters[idx] = ((STRUCT_COUNTERS) { 0, 0});
 	DEBUGP_C("NOMAP => zero\n");
 }
 
 static void counters_normal_map(STRUCT_COUNTERS_INFO *newcounters,
-				STRUCT_REPLACE *repl,
-				unsigned int index,
+				STRUCT_REPLACE *repl, unsigned int idx,
 				unsigned int mappos)
 {
 	/* Original read: X.
@@ -2508,15 +2523,13 @@ static void counters_normal_map(STRUCT_COUNTERS_INFO *newcounters,
 	 * => Add in X + Y
 	 * => Add in replacement read.
 	 */
-	newcounters->counters[index] = repl->counters[mappos];
+	newcounters->counters[idx] = repl->counters[mappos];
 	DEBUGP_C("NORMAL_MAP => mappos %u \n", mappos);
 }
 
 static void counters_map_zeroed(STRUCT_COUNTERS_INFO *newcounters,
-				STRUCT_REPLACE *repl,
-				unsigned int index,
-				unsigned int mappos,
-				STRUCT_COUNTERS *counters)
+				STRUCT_REPLACE *repl, unsigned int idx,
+				unsigned int mappos, STRUCT_COUNTERS *counters)
 {
 	/* Original read: X.
 	 * Atomic read on replacement: X + Y.
@@ -2525,19 +2538,18 @@ static void counters_map_zeroed(STRUCT_COUNTERS_INFO *newcounters,
 	 * => Add in Y.
 	 * => Add in (replacement read - original read).
 	 */
-	subtract_counters(&newcounters->counters[index],
+	subtract_counters(&newcounters->counters[idx],
 			  &repl->counters[mappos],
 			  counters);
 	DEBUGP_C("ZEROED => mappos %u\n", mappos);
 }
 
 static void counters_map_set(STRUCT_COUNTERS_INFO *newcounters,
-			     unsigned int index,
-			     STRUCT_COUNTERS *counters)
+                             unsigned int idx, STRUCT_COUNTERS *counters)
 {
 	/* Want to set counter (iptables-restore) */
 
-	memcpy(&newcounters->counters[index], counters,
+	memcpy(&newcounters->counters[idx], counters,
 		sizeof(STRUCT_COUNTERS));
 
 	DEBUGP_C("SET\n");
