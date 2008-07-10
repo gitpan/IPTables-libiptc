@@ -1,4 +1,4 @@
-/* Library which manipulates firewall rules.  Version $Revision: 7138 $ */
+/* Library which manipulates firewall rules.  Version $Revision$ */
 
 /* Architecture of firewall rules is as follows:
  *
@@ -914,19 +914,19 @@ static void __iptcc_p_add_chain(TC_HANDLE_T h, struct chain_head *c,
 	else {
 		ctail = list_entry(tail, struct chain_head, list);
 
-		if (iptcc_is_builtin(ctail) ||
-		    strcmp(c->name, ctail->name) > 0)
+		if (strcmp(c->name, ctail->name) > 0 ||
+		    iptcc_is_builtin(ctail))
 			list_add_tail(&c->list, &h->chains);/* Already sorted*/
 		else {
 			iptc_insert_chain(h, c);/* Was not sorted */
 
 			/* Notice, if chains were not received sorted
-			 * from kernel, then the offset bsearch is no
+			 * from kernel, then an offset bsearch is no
 			 * longer valid.
 			 */
 			h->sorted_offsets = 0;
 
-			debug("WARNING: chain:[%s] was NOT sorted(ctail:%s)\n",
+			debug("NOTICE: chain:[%s] was NOT sorted(ctail:%s)\n",
 			      c->name, ctail->name);
 		}
 	}
