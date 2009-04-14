@@ -171,7 +171,6 @@ static char commands_v_options[NUMBER_OF_CMD][NUMBER_OF_OPT] =
 /*NEW_CHAIN*/ {'x','x','x','x','x',' ','x','x','x','x','x','x'},
 /*DEL_CHAIN*/ {'x','x','x','x','x',' ','x','x','x','x','x','x'},
 /*SET_POLICY*/{'x','x','x','x','x',' ','x','x','x','x','x','x'},
-/*CHECK*/     {'x','+','+','+','x',' ','x',' ',' ',' ','x','x'},
 /*RENAME*/    {'x','x','x','x','x',' ','x','x','x','x','x','x'}
 };
 
@@ -250,8 +249,37 @@ proto_to_name(u_int8_t proto, int nolookup)
 	return NULL;
 }
 
-struct in_addr *
-dotted_to_addr(const char *dotted)
+int
+service_to_port(const char *name, const char *proto)
+{
+	struct servent *service;
+
+	if ((service = getservbyname(name, proto)) != NULL)
+		return ntohs((unsigned short) service->s_port);
+
+	return -1;
+}
+
+u_int16_t
+parse_port(const char *port, const char *proto)
+{
+	unsigned int portnum;
+
+	if ((string_to_number(port, 0, 65535, &portnum)) != -1 ||
+	    (portnum = service_to_port(port, proto)) != -1)
+		return (u_int16_t)portnum;
+
+	exit_error(PARAMETER_PROBLEM,
+		   "invalid port/service `%s' specified", port);
+}
+
+enum {
+	IPT_DOTTED_ADDR = 0,
+	IPT_DOTTED_MASK
+};
+
+static struct in_addr *
+__dotted_to_addr(const char *dotted, int type)
 {
 	static struct in_addr addr;
 	unsigned char *addrp;
@@ -267,8 +295,20 @@ dotted_to_addr(const char *dotted)
 
 	p = buf;
 	for (i = 0; i < 3; i++) {
-		if ((q = strchr(p, '.')) == NULL)
-			return (struct in_addr *) NULL;
+		if ((q = strchr(p, '.')) == NULL) {
+			if (type == IPT_DOTTED_ADDR) {
+				/* autocomplete, this is a network address */
+				if (string_to_number(p, 0, 255, &onebyte) == -1)
+					return (struct in_addr *) NULL;
+
+				addrp[i] = (unsigned char) onebyte;
+				while (i < 3)
+					addrp[++i] = 0;
+
+				return &addr;
+			} else
+				return (struct in_addr *) NULL;
+		}
 
 		*q = '\0';
 		if (string_to_number(p, 0, 255, &onebyte) == -1)
@@ -285,6 +325,18 @@ dotted_to_addr(const char *dotted)
 	addrp[3] = (unsigned char) onebyte;
 
 	return &addr;
+}
+
+struct in_addr *
+dotted_to_addr(const char *dotted)
+{
+	return __dotted_to_addr(dotted, IPT_DOTTED_ADDR);
+}
+
+struct in_addr *
+dotted_to_mask(const char *dotted)
+{
+	return __dotted_to_addr(dotted, IPT_DOTTED_MASK);
 }
 
 static struct in_addr *
@@ -623,7 +675,7 @@ parse_mask(char *mask)
 		maskaddr.s_addr = 0xFFFFFFFF;
 		return &maskaddr;
 	}
-	if ((addrp = dotted_to_addr(mask)) != NULL)
+	if ((addrp = dotted_to_mask(mask)) != NULL)
 		/* dotted_to_addr already returns a network byte order addr */
 		return addrp;
 	if (string_to_number(mask, 0, 32, &bits) == -1)
@@ -829,9 +881,9 @@ void parse_interface(const char *arg, char *vianame, unsigned char *mask)
 		memset(mask, 0xFF, vialen + 1);
 		memset(mask + vialen + 1, 0, IFNAMSIZ - vialen - 1);
 		for (i = 0; vianame[i]; i++) {
-			if (!isalnum(vianame[i]) 
-			    && vianame[i] != '_' 
-			    && vianame[i] != '.') {
+			if (vianame[i] == ':' ||
+			    vianame[i] == '!' ||
+			    vianame[i] == '*') {
 				printf("Warning: wierd character in interface"
 				       " `%s' (No aliases, :, ! or *).\n",
 				       vianame);
