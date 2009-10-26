@@ -5,7 +5,8 @@
 #include "ppport.h"
 
 #include <libiptc/libiptc.h>
-#include <include/iptables.h>
+#include <xtables.h>
+#include <iptables.h>
 #include <string.h>
 #include <stdio.h>
 #include <errno.h>
@@ -281,13 +282,13 @@ list_rules_IPs(self, type, chain)
 
 		    switch (the_type) {
 		    case 'd':
-			sprintf(buf,"%s",(char*)addr_to_dotted(&(entry->ip.dst)));
-			strcat(buf, (char*) mask_to_dotted(&(entry->ip.dmsk)));
+			sprintf(buf,"%s",ipaddr_to_numeric(&(entry->ip.dst)));
+			strcat(buf, ipmask_to_numeric(&(entry->ip.dmsk)));
 			sv = newSVpv(buf, 0);
 		        break;
 		    case 's':
-			sprintf(buf,"%s",(char*)addr_to_dotted(&(entry->ip.src)));
-			strcat(buf, (char*) mask_to_dotted(&(entry->ip.smsk)));
+			sprintf(buf,"%s",ipaddr_to_numeric(&(entry->ip.src)));
+			strcat(buf, ipmask_to_numeric(&(entry->ip.smsk)));
 			sv = newSVpv(buf, 0);
 		        break;
 		    default:
@@ -433,11 +434,17 @@ iptables_do_command(self, array_ref)
 
   CODE:
     program_name = "perl-to-libiptc";
-    program_version = IPTABLES_VERSION;
+    //program_version = IPTABLES_VERSION;
+    program_version = XTABLES_VERSION;
 
-    lib_dir = getenv("IPTABLES_LIB_DIR");
-    if (!lib_dir)
-        lib_dir = IPT_LIB_DIR;
+    lib_dir = getenv("XTABLES_LIBDIR");
+    if (lib_dir == NULL) {
+	lib_dir = getenv("IPTABLES_LIB_DIR");
+	if (lib_dir != NULL)
+	    fprintf(stderr, "IPTABLES_LIB_DIR is deprecated\n");
+    }
+    if (lib_dir == NULL)
+        lib_dir = XTABLES_LIBDIR;
 
 
     /* Due to getopt parsing in iptables.c
