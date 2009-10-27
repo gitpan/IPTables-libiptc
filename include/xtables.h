@@ -1,11 +1,13 @@
 #ifndef _XTABLES_H
 #define _XTABLES_H
 
+#include <sys/socket.h> /* PF_* */
 #include <sys/types.h>
+#include <stdbool.h>
+#include <net/if.h>
 #include <linux/types.h>
 #include <linux/netfilter/x_tables.h>
 #include <libiptc/libxtc.h>
-#include <stdbool.h>
 
 #ifndef IPPROTO_SCTP
 #define IPPROTO_SCTP 132
@@ -17,24 +19,65 @@
 #define IPPROTO_UDPLITE	136
 #endif
 
-#define XTABLES_VERSION IPTABLES_VERSION
-#define XTABLES_VERSION_CODE (0x10000 * 1 + 0x100 * 4 + 1)
+/* Hawk: Trying to handle ABI segfault bug */
+#ifndef IPTABLES_VERSION_CODE
+#error "IPTABLES version code not available"
+#else
+#define DETECTED_VERSION_CODE IPTABLES_VERSION_CODE
+#endif
+
 
 #define XTABLES_API_VERSION(x,y,z)    (0x10000*(x) + 0x100*(y) + z)
+
+
+#if   DETECTED_VERSION_CODE == XTABLES_API_VERSION(1,4,3)
+#define XTABLES_VERSION "libxtables.so.1"
+#define XTABLES_VERSION_CODE 1
+#elif DETECTED_VERSION_CODE >= XTABLES_API_VERSION(1,4,4)
+#define XTABLES_VERSION "libxtables.so.2"
+#define XTABLES_VERSION_CODE 2
+#else
+#define XTABLES_VERSION      IPTABLES_VERSION
+#define XTABLES_VERSION_CODE IPTABLES_VERSION_CODE
+#endif
+
+struct in_addr;
 
 /* Include file for additions: new matches and targets. */
 struct xtables_match
 {
+
+#if DETECTED_VERSION_CODE >= XTABLES_API_VERSION(1,4,3)
+#warning "Versions 1.4.3.2 or above have the version pointer first"
+        /*
+         * ABI/API version this module requires. Must be first member,
+         * as the rest of this struct may be subject to ABI changes.
+         */
+        const char *version;
+#endif
+
 	struct xtables_match *next;
 
+#if DETECTED_VERSION_CODE <= XTABLES_API_VERSION(1,4,1)
 	xt_chainlabel name;
+#elif DETECTED_VERSION_CODE == XTABLES_API_VERSION(1,4,2)
+#warning "Trying to avoid segfaults on version 1.4.2"
+	const char *name;
+#else
+#warning "Versions above 1.4.2 are unlikely to work due to ABI changes"
+	const char *name;
+#endif
 
 	/* Revision of match (0 by default). */
 	u_int8_t revision;
 
 	u_int16_t family;
 
+
+#if DETECTED_VERSION_CODE < XTABLES_API_VERSION(1,4,3)
+#warning "Trying to avoid segfaults, version pointer old position"
 	const char *version;
+#endif
 
 	/* Size of match data. */
 	size_t size;
@@ -81,16 +124,34 @@ struct xtables_match
 
 struct xtables_target
 {
+#if DETECTED_VERSION_CODE >= XTABLES_API_VERSION(1,4,3)
+#warning "Versions 1.4.3.2 or above have the version pointer first"
+        /*
+         * ABI/API version this module requires. Must be first member,
+         * as the rest of this struct may be subject to ABI changes.
+         */
+        const char *version;
+#endif
+
 	struct xtables_target *next;
 
+#if DETECTED_VERSION_CODE <= XTABLES_API_VERSION(1,4,1)
 	xt_chainlabel name;
+#elif DETECTED_VERSION_CODE == XTABLES_API_VERSION(1,4,2)
+	const char *name;
+#else
+	const char *name;
+#endif
 
 	/* Revision of target (0 by default). */
 	u_int8_t revision;
 
 	u_int16_t family;
 
+#if DETECTED_VERSION_CODE < XTABLES_API_VERSION(1,4,3)
+#warning "Trying to avoid segfaults, version pointer old position"
 	const char *version;
+#endif
 
 	/* Size of target data. */
 	size_t size;

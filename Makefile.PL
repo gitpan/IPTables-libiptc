@@ -21,9 +21,19 @@ use ExtUtils::MakeMaker;
 	    return ($exitcode, $output);
 	}
 
+	sub xtables_api_version($$$) {
+	    #define XTABLES_API_VERSION(x,y,z)    (0x10000*(x) + 0x100*(y) + z)
+	    my $major    = shift;
+	    my $minor    = shift;
+	    my $revision = shift;
+	    my $version_code = 0x10000*($major) + 0x100*($minor) + $revision;
+	    return $version_code;
+	}
+
 	sub detect_iptables_version($) {
 	    my $default_version = shift;
 	    my $ver = $default_version;
+	    my $vercode;
 	    my $cmd = "iptables -V";
 	    my $xtables_libdir = "/lib/xtables";
 	    my $exitcode;
@@ -44,12 +54,17 @@ use ExtUtils::MakeMaker;
 	    } else {
 		chomp $output;
 		#print "Matching on output:[$output]\n";
-		if ($output =~ /iptables v(\d+)\.(\d+)\.(\d+)/) {
+		if ($output =~ /iptables v(\d+)\.(\d+)\.(\d+)\.?(\d?)/) {
 		    my $major    = $1;
 		    my $minor    = $2;
 		    my $revision = $3;
+		    my $extra    = $4;
 		    $ver="$major.$minor.$revision";
-		    print "Detected iptables version: $major.$minor.$revision\n";
+		    if ( $extra =~ m/\d+/ ) {
+			$ver = $ver . "." . ${extra};
+		    }
+		    $vercode=xtables_api_version($major,$minor,$revision);
+		    print "Detected iptables version: $ver (vercode:$vercode)\n";
 		    if ($major > 1) {
 			print "Too high major version, fallback\n";
 			$ver = $default_version;
@@ -62,37 +77,47 @@ use ExtUtils::MakeMaker;
 
 		    if ($minor < 4) {
 			print "Version below 1.4.x, good luck\n";
+			print "We recommend that you instead use version 0.15 of IPTables::libiptc\n";
+			print "\n";
 		    }
 
-		    if ($minor == 4 && $revision != 1) {
+		    if ($minor == 4 && $revision >= 3) {
 			print "\n";
-			print "-=-=-=- WARNING of segfaults!!! -=-=-=-\n";
+			print "-=-=-=- WARNING: Incompatible iptables version -=-=-=-";
 			print "\n";
-			print " This perl module release only supports iptables\n";
-			print "  version ${default_version}\n";
+			print " This perl module release only supports iptables versions:\n";
+			print "   v1.4.1 and v1.4.2 \n";
+			print "\n";
+			print "\n";
+			print " Significant changes when into 1.4.3, which thus cannot be kept binary\n";
+			print " compatible with this release.  Expect to see the following error:\n";
+			print "   \"undefined symbol: xt_params\"  if using this release anyhow.\n";
 			print "\n";
 			print " There are some segfault issues when comparing the IPTABLES_VERSION\n";
 			print " variable (in the dynamic loadable modules) between iptables versions\n";
 			print " 1.4.1 and 1.4.2, and also between 1.4.2 and 1.4.3. It has been fixed\n";
 			print " from version 1.4.3.2 and beyond (see git commit c4edfa63eda06)\n";
 			print "\n";
-			print " If your system provides the correct xtables.h header file, there is\n";
-			print " a good chance it will work anyhow.  You have been warned!\n";
+			print " This module tries to detect the segfault version conflicts, and\n";
+			print " performs some compile time hacks to xtables.h header file.\n";
+			print "\n";
+			print " YOU HAVE BEEN WARNED!!!\n";
 			print "\n";
 		    }
 
 		}
 	    }
 	    print("Using iptables version: $ver\n");
-	    return ($ver, $xtables_libdir);
+	    return ($ver, $vercode, $xtables_libdir);
 	}
 
 	sub post_initialize {
-	    my $default_version = "1.4.1";
-	    my ($ver, $xtables_libdir) = detect_iptables_version($default_version);
-
+	    my $default_version = "1.4.2";
+	    my ($ver, $vercode, $xtables_libdir) = detect_iptables_version($default_version);
+	    #print "vercode: $vercode\n";
 "
 IPTABLES_VERSION:=$ver
+IPTABLES_VERSION_CODE:=$vercode
 XTABLES_LIBDIR:=$xtables_libdir
 LOCAL_LIB_IPTC:=-Llibrary_iptc/
 "
@@ -101,10 +126,10 @@ LOCAL_LIB_IPTC:=-Llibrary_iptc/
         sub postamble {
 "
 library_iptc/libiptc.a: library_iptc/*.c
-	make -C library_iptc/ all IPTABLES_VERSION=\"\$(IPTABLES_VERSION)\"
+	make -C library_iptc/ all IPTABLES_VERSION=\"\$(IPTABLES_VERSION)\" IPTABLES_VERSION_CODE=\"\$(IPTABLES_VERSION_CODE)\"
 
 iptables/iptables.o iptables/xtables.o: iptables/*.c library_iptc/libiptc.a
-	make -C iptables/ all PREFIX=\"\$(PREFIX)\" IPTABLES_VERSION=\"\$(IPTABLES_VERSION)\" XTABLES_LIBDIR=\"\$(XTABLES_LIBDIR)\"
+	make -C iptables/ all PREFIX=\"\$(PREFIX)\" IPTABLES_VERSION=\"\$(IPTABLES_VERSION)\" XTABLES_LIBDIR=\"\$(XTABLES_LIBDIR)\" IPTABLES_VERSION_CODE=\"\$(IPTABLES_VERSION_CODE)\"
 
 install::
 	make -C iptables/ install
@@ -130,7 +155,7 @@ WriteMakefile(
 #   LIBS              => ['-Llibrary_iptc/ -liptc -ldl -lnsl'], # e.g., '-lm'
     LDDLFLAGS         => '-shared $(LOCAL_LIB_IPTC) -L$(PREFIX)/lib',
     LDFLAGS           => '-L$(PREFIX)/lib',
-    DEFINE            => '-g -DIPTABLES_VERSION=\"$(IPTABLES_VERSION)\" -DXTABLES_LIBDIR=\"\$(XTABLES_LIBDIR)\"',
+    DEFINE            => '-g -DIPTABLES_VERSION=\"$(IPTABLES_VERSION)\" -DXTABLES_LIBDIR=\"\$(XTABLES_LIBDIR)\" -DIPTABLES_VERSION_CODE=\$(IPTABLES_VERSION_CODE)',
                          # e.g., '-DHAVE_SOMETHING'
     INC               => '-I/usr/local/include -I./include -I.',
                          # e.g., '-I. -I/usr/include/other'
