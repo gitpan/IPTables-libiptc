@@ -1,4 +1,4 @@
-IPTables-libiptc version 0.18
+IPTables-libiptc version 0.51
 =============================
 
 This package provides a Perl interface to the netfilter/iptables
@@ -9,18 +9,21 @@ fast. Several rule changes is committed atomically.
 
 This module is heavily inspired by the CPAN module IPTables-IPv4.  The
 CPAN module IPTables-IPv4 could not be used because it has not been
-kept up-to-date, with the newest iptables extentions.  This is a
+kept up-to-date, with the newest iptables extensions.  This is a
 result of the module design, as it contains every extension and thus
 needs to port them individually.
 
-This package has another approach, it links with the systems libiptc.a
-library and depend on dynamic loading of iptables extensions available
-on the system.
+This package has another approach, it links with the systems
+libiptc.so and libxtables.so library and depend on dynamic loading of
+iptables extensions available on the system.
 
 This design limits us to only export the libiptc chain manipulation
 functions.  All rule manipulations are done through the iptables.c
-"do_command" function. (As iptables.c is not made as a library, the
-package unfortunately needs to maintain/contain this C file).
+"do_command" function.  As iptables.c is not made as a library, the
+package unfortunately needs to maintain/contain this C file. This
+unfortunately also means that we need to keep up-to-date with
+iptables.c API changes (but significantly less work that keeping in
+sync with every extension module).
 
 
 DEPENDENCIES
@@ -28,32 +31,28 @@ DEPENDENCIES
 This module requires these other modules and libraries:
 
  iptables
- libiptc.a
+ xtables.h
+ libiptc.so
+ libxtables.so
 
 The iptables version installed on your system is auto-detected during
 generation of the Makefile.PL file.  This sets the IPTABLES_VERSION
 variable as it needs to match the .so extentions available on you
 system.
 
-This release only supports the iptables versions 1.4.1 and 1.4.2.
-The default fallback IPTABLES_VERSION is currently set to version 1.4.2.
+This release focus on supporting iptables above version 1.4.3.2
+and up-to iptables version 1.4.10.
+
+The default fallback IPTABLES_VERSION is currently set to version 1.4.4.
+
+If you need support for iptables versions 1.4.1 and 1.4.2, we
+recommend using version 0.18 of this module IPTables::libiptc.
 
 
 BUGS
 
-This module tries to detect the segfault version conflicts, and
-performs some compile time hacks to xtables.h header file.
-
-There are some segfault issues when comparing the IPTABLES_VERSION
-variable (in the dynamic loadable modules) between iptables versions,
-1.4.1 and 1.4.2, and also between 1.4.2 and 1.4.3.  It has been fixed
-from version 1.4.3.2 and beyond (see git commit c4edfa63eda06) Its
-related to "include/xtables.h" (structs xtables_match and
-xtables_target, and location of the "version" element).
-
-Significant changes when into 1.4.3, which thus cannot be kept binary
-compatible with this release.  Expect to see the following
-error: "undefined symbol: xt_params"  if using this release anyhow.
+Significant API changes when into 1.4.3, and thus older versions cannot
+be kept backward binary compatible with this release.
 
 
 INSTALLATION
@@ -61,7 +60,7 @@ INSTALLATION
 Notice this module depends on iptables dynamic loadable libraries,
 thus it needs to know the path to them (default assumes they are
 located in /lib/xtables).  The iptables path for dynamic loading
-(where the libipt_*.so files are located) can be altered by setting
+(where the lib{ip,x}t_*.so files are located) can be altered by setting
 the variable XTABLES_LIBDIR while calling make.  This can also be
 changed later at runtime setting the environment variable
 XTABLES_LIBDIR.
@@ -71,16 +70,17 @@ To install this module type the following:
    perl Makefile.PL PREFIX=/usr/local/
    make XTABLES_LIBDIR=/usr/local/libexec/xtables
    sudo make test
-   make install PREFIX=/usr/local/stow/IPTables-libiptc-0.18
+   make install PREFIX=/usr/local/stow/IPTables-libiptc-0.51
 
    cd /usr/local/stow/
-   stow IPTables-libiptc-0.18
+   stow IPTables-libiptc-0.51
 
 
 COPYRIGHT AND LICENCE
 
-Copyright (C) 2006-2009 by Jesper Dangaard Brouer <hawk@cpan.org>
+Copyright (C) 2006-2011 by Jesper Dangaard Brouer <hawk@cpan.org>
 
-This library is free software; you can redistribute it and/or modify
-it under the same terms as Perl itself, either Perl version 5.8.4 or,
-at your option, any later version of Perl 5 you may have available.
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or
+(at your option) any later version.

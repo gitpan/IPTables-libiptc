@@ -9,11 +9,11 @@ ifndef KERNEL_DIR
 endif
 
 ifndef IPTABLES_VERSION
-IPTABLES_VERSION:=1.4.1
+IPTABLES_VERSION:=1.4.4
 endif
 
 ifndef IPTABLES_VERSION_CODE
-IPTABLES_VERSION_CODE:=66561
+IPTABLES_VERSION_CODE:=66564
 endif
 
 
@@ -29,41 +29,49 @@ ifndef IPT_LIBDIR
 IPT_LIBDIR:=$(LIBDIR)/iptables
 endif
 
+ifndef XTABLES_LIBDIR
+XTABLES_LIBDIR:=/lib/xtables/
+endif
+
+
 ifndef LDFLAGS
 LDFLAGS = -L$(LIBDIR)
 endif
 LDFLAGS+=-rdynamic
 
-# Local version of libiptc
-# ($(LOCAL_LIB_IPTC) cannot be used here because it needs a "../")
-#LD_LOCAL_IPTC:=-L../library_iptc/
-#
-# Need to link directly with object library
-LOCAL_IPTC_OBJ:=../library_iptc/libiptc.a
-
-#LDLIBS=-liptc -ldl -lnsl
-LDLIBS=-ldl -lnsl
+# When generating the perl Makefile.PL, the system will detect if libip4tc
+# is available, this variable parsed along from the ../Makefile call
+ifndef EXTRALIBS
+EXTRALIBS := -lnsl -liptc -lip4tc -lxtables
+endif
+LDLIBS=-ldl $(EXTRALIBS)
 
 COPT_FLAGS:=-O2
-CFLAGS:=$(COPT_FLAGS) -Wall -Wunused -I$(KERNEL_DIR)/include -I$(INCDIR) -I../include/ -fPIC -DXTABLES_INTERNAL
+CFLAGS:=$(COPT_FLAGS) -Wall -Wunused -I$(KERNEL_DIR)/include -I$(INCDIR) -I../include/ -fPIC -DXTABLES_INTERNAL -g
 #-g -DDEBUG #-pg # -DIPTC_DEBUG
 
 DEFINES:=-DIPTABLES_VERSION=\"$(IPTABLES_VERSION)\" -DXTABLES_LIBDIR=\"$(XTABLES_LIBDIR)\" -DIPTABLES_VERSION_CODE=\$(IPTABLES_VERSION_CODE)
 default: all
 
-all: iptables.o xtables.o iptables-standalone iptables-blocking
+all: iptables.o iptables-standalone iptables-blocking xshared.o
 
-iptables.o: iptables.c Makefile
+iptables.o: iptables-detect-version.c Makefile
 	$(CC) $(CFLAGS) $(DEFINES) -c -o $@ $<
 
-xtables.o: xtables.c Makefile
+xshared.o: xshared.c
 	$(CC) $(CFLAGS) $(DEFINES) -c -o $@ $<
 
-iptables-standalone: iptables-standalone.c iptables.o xtables.o
-	$(CC) $(CFLAGS) $(DEFINES) $(LDFLAGS) -o $@ $^ $(LOCAL_IPTC_OBJ) $(LDLIBS)
+iptables-standalone: iptables-standalone.c iptables.o xshared.o
+	$(CC) $(CFLAGS) $(DEFINES) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
-iptables-blocking: iptables-blocking.c iptables.o xtables.o
-	$(CC) $(CFLAGS) $(DEFINES) $(LDFLAGS) -o $@ $^ $(LOCAL_IPTC_OBJ) $(LDLIBS)
+iptables-blocking: iptables-blocking.c iptables.o xshared.o
+	$(CC) $(CFLAGS) $(DEFINES) $(LDFLAGS) -o $@ $^ $(LDLIBS)
+
+
+## Try to make static version
+#iptables-static: iptables-standalone.c iptables.o xtables.o
+#	echo  Static-ver: $@ $^
+#	$(CC) $(CFLAGS) $(DEFINES) $(LDFLAGS) -o $@ $^ ../library_iptc/libiptc.a -ldl -lnsl
 
 install:
 	install -m 0755 -d $(DESTDIR)/$(SBINDIR)

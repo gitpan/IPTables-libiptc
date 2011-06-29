@@ -42,7 +42,7 @@ our @EXPORT = qw(
 	IPT_MIN_ALIGN
 );
 
-our $VERSION = '0.18';
+our $VERSION = '0.51';
 
 sub AUTOLOAD {
     # This AUTOLOAD is used to 'autoload' constants from the constant()
@@ -266,17 +266,18 @@ Jesper Dangaard Brouer, E<lt>hawk@diku.dkE<gt> or E<lt>hawk@people.netfilter.org
 
 =head2 Authors SVN version information
 
- $LastChangedDate: 2009-10-26 14:26:26 +0100 (Mon, 26 Oct 2009) $
- $Revision: 1642 $
- $LastChangedBy: jdb $
+ $LastChangedDate$
+ $Revision$
+ $LastChangedBy$
 
 
 =head1 COPYRIGHT AND LICENSE
 
 Copyright (C) 2006-2009 by Jesper Dangaard Brouer
 
-This library is free software; you can redistribute it and/or modify
-it under the same terms as Perl itself, either Perl version 5.8.4 or,
-at your option, any later version of Perl 5 you may have available.
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or
+(at your option) any later version.
 
 =cut
