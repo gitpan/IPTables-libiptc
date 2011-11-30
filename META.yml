@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:               IPTables-libiptc
-version:            0.51
+version:            0.52
 abstract:           Perl extension for iptables libiptc
 author:
     - Jesper Dangaard Brouer <hawk@comx.dk>
